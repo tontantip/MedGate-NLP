@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light dark">
+  <script>
+    try {
+      document.querySelector('meta[name="color-scheme"]').content = localStorage.getItem("color-scheme") ?? "light dark";
+    } catch (e) {}
+  </script>
+  <title>MedGate AI — 5-Tier Clinical Triage &amp; Routing CDSS Demo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sarabun:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./styles.css">
+  <script defer src="./data/demo_25cases.js"></script>
+  <script defer src="./app.js"></script>
+</head>
+<body>
+  <div id="data-error-banner" class="error-banner" role="alert" hidden>
+    <div class="error-banner-inner">
+      <strong>Failed to load <code>window.MEDGATE_DEMO_5CASES</code></strong>
+      <p>Ensure <code>demo_web/data/demo_5cases.js</code> exists alongside <code>demo_web/index.html</code> and reload.</p>
+    </div>
+  </div>
+
+  <!-- TOP HEADER -->
+  <header class="topbar">
+    <div class="container topbar-inner">
+      <div class="brand-block">
+        <div class="brand-eyebrow-row">
+          <span class="kaggle-dot" aria-hidden="true"></span>
+          <span class="eyebrow">DADS7203 NLP &bull; MEDGATE AI INTERACTIVE CDSS</span>
+          <span class="gate-chip">Strict Gate: &theta;<sub>u</sub> &ge; 0.98 &amp; &theta;<sub>s</sub> &ge; 0.80</span>
+        </div>
+        <h1 class="site-title">MedGate AI: 5-Tier Clinical Triage &amp; Routing Demo</h1>
+        <p class="site-subtitle">
+          เปรียบเทียบสถาปัตยกรรมคัดกรองผู้ป่วยทั้ง 5 ระดับ (Jev AI, Local Qwen2.5-3B QLoRA, Commercial LLM, Hybrid Local Tier 4 และ Hybrid Cloud Tier 5) จากข้อมูลทดสอบจริง Seed 42
+        </p>
+      </div>
+
+      <div class="topbar-actions">
+        <button type="button" id="btn-theme-toggle" class="theme-toggle-btn" aria-label="Toggle color theme">
+          <span class="theme-opt theme-opt-dark">
+            <span aria-hidden="true">&#9790;</span>
+            <span>Dark Mode</span>
+          </span>
+          <span class="theme-opt theme-opt-light">
+            <span aria-hidden="true">&#9728;</span>
+            <span>Light Mode</span>
+          </span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container main-layout" id="app-main">
+    <!-- FEATURE A: CASE SELECTOR (5 CURATED TEST CASES) -->
+    <section class="panel selector-panel" aria-label="Curated 5 Patient Symptom Cases">
+      <div class="section-header">
+        <div>
+          <span class="mono-label">STEP 1 &bull; CURATED TEST BENCHMARK (5 OF 25 CASES)</span>
+          <h2 class="section-title">เลือกเคสอาการผู้ป่วย (สุ่มแสดง 5 เคสจากคลังตัวอย่าง 25 เคส)</h2>
+        </div>
+        <div class="header-actions-group">
+          <button type="button" id="btn-reroll-cases" class="btn-reroll">
+            <span aria-hidden="true">&#8635;</span>
+            <span>สุ่ม 5 เคสใหม่ (จาก 25 เคส)</span>
+          </button>
+          <span class="meta-pill" id="active-case-badge">Case #1 &bull; ID 182</span>
+        </div>
+      </div>
+
+      <div class="case-grid" id="case-selector-grid" role="listbox" aria-label="5 curated patient symptom cases">
+        <!-- Populated by app.js -->
+      </div>
+
+      <!-- PATIENT NARRATIVE BOX (EN + TH) -->
+      <div class="narrative-card" id="narrative-card">
+        <div class="narrative-header">
+          <div class="narrative-title-group">
+            <span class="mono-label">PATIENT NARRATIVE INPUT</span>
+            <h3 class="narrative-heading" id="narrative-heading">Case #1</h3>
+          </div>
+          <div class="lang-tabs" role="tablist" aria-label="Narrative language view">
+            <button type="button" class="lang-tab is-active" data-lang="both" role="tab" aria-selected="true">EN + TH ควบคู่</button>
+            <button type="button" class="lang-tab" data-lang="th" role="tab" aria-selected="false">ภาษาไทย</button>
+            <button type="button" class="lang-tab" data-lang="en" role="tab" aria-selected="false">English</button>
+          </div>
+        </div>
+        <p class="case-highlight-banner" id="case-highlight-banner" hidden></p>
+        <div class="narrative-columns" id="narrative-columns" data-view="both">
+          <div class="narrative-col narrative-col-en">
+            <span class="lang-badge">Original English Input</span>
+            <p class="narrative-text" id="narrative-text-en"></p>
+          </div>
+          <div class="narrative-col narrative-col-th">
+            <span class="lang-badge">คำแปลภาษาไทย (Thai Translation)</span>
+            <p class="narrative-text" id="narrative-text-th"></p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- FEATURE B: 3-SECOND STAGED LOADING ANIMATION -->
+    <section class="panel loading-panel" id="loading-panel" aria-live="polite" hidden>
+      <div class="loading-inner">
+        <div class="loading-top-row">
+          <div class="loading-title-wrap">
+            <span class="pulse-ring" aria-hidden="true"></span>
+            <div>
+              <span class="mono-label">MEDGATE AI PIPELINE EXECUTION</span>
+              <h2 class="loading-stage-title" id="loading-stage-text">Running Tier 1 Jev AI Frontline Screening...</h2>
+            </div>
+          </div>
+          <span class="loading-timer tabular-nums" id="loading-timer-text">0.0s / 3.0s</span>
+        </div>
+
+        <div class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="loading-progressbar">
+          <div class="progress-fill" id="loading-progress-fill"></div>
+        </div>
+
+        <div class="stage-pills">
+          <span class="stage-pill" id="stage-pill-1">1. Tier 1 Jev AI Screening (0–1s)</span>
+          <span class="stage-pill" id="stage-pill-2">2. Safety Gate &amp; Local Qwen2.5-3B (1–2s)</span>
+          <span class="stage-pill" id="stage-pill-3">3. Commercial LLMs &amp; 5-Tier Summary (2–3s)</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- RESULTS WORKSPACE (REVEALED AFTER 3s LOADING) -->
+    <div id="results-workspace" class="results-workspace">
+      <!-- FEATURE C: VERTICAL 5-TIER RESULTS STACK -->
+      <section class="tiers-section" aria-label="Vertical 5-Tier Results Stack">
+        <div class="section-header results-section-header">
+          <div>
+            <span class="mono-label">STEP 2 &bull; VERTICAL 5-TIER PIPELINE RESULTS</span>
+            <h2 class="section-title">ผลลัพธ์การคัดกรองเรียงตามลำดับสถาปัตยกรรม (Tier 1 &rarr; Tier 5)</h2>
+          </div>
+        </div>
+
+        <div class="tiers-vertical-stack" id="tiers-vertical-stack">
+          <!-- Tier 1 -> Tier 5 cards rendered vertically by app.js -->
+        </div>
+      </section>
+
+      <!-- FEATURE D: COMPARISON SUMMARY TABLE VS GROUND TRUTH -->
+      <section class="panel comparison-section" aria-label="Comparison Summary vs Ground Truth">
+        <div class="section-header">
+          <div>
+            <span class="mono-label">STEP 3 &bull; BENCHMARK VS. PHYSICIAN GROUND TRUTH</span>
+            <h2 class="section-title">ตารางสรุปเปรียบเทียบผลลัพธ์ทั้ง 5 Tiers เทียบกับ Ground Truth</h2>
+          </div>
+        </div>
+
+        <!-- Ground Truth Card -->
+        <div class="gt-card" id="gt-summary-card">
+          <!-- Populated by app.js -->
+        </div>
+
+        <!-- Responsive Kaggle-style Data Table -->
+        <div tabindex="0" role="region" aria-labelledby="comparison-table-caption" class="table-wrapper">
+          <table class="comparison-table" id="comparison-table">
+            <caption id="comparison-table-caption" class="sr-only">
+              5-Tier Clinical Triage Comparison against Physician Ground Truth
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">Tier / Architecture</th>
+                <th scope="col">Routing Status</th>
+                <th scope="col">Predicted Urgency</th>
+                <th scope="col">Predicted Specialty</th>
+                <th scope="col">Confidence / Prob</th>
+                <th scope="col">Latency (ms)</th>
+                <th scope="col">Total Tokens</th>
+                <th scope="col">Total Cost (USD)</th>
+              </tr>
+            </thead>
+            <tbody id="comparison-table-body">
+              <!-- Populated by app.js -->
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <span>MedGate AI &bull; DADS7203 Natural Language Processing Final Project</span>
+      <span>100% Real Empirical Telemetry (Seed 42 &bull; Strict Gate &theta;<sub>u</sub>=0.98, &theta;<sub>s</sub>=0.80)</span>
+    </div>
+  </footer>
+</body>
+</html>
