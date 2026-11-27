@@ -77,16 +77,19 @@
       </div>
 
       <div class="backend-bar">
-        <label class="backend-label" for="backend-url-input">Colab Backend URL:</label>
+        <label class="backend-label" for="backend-url-input">Tunnel URL (จาก Cell 5 ใน Colab):</label>
         <input
           type="url"
           id="backend-url-input"
           class="backend-input"
-          placeholder="https://xxxx-xxxx.trycloudflare.com"
+          placeholder="วางลิงก์ https://xxxx.trycloudflare.com จาก Cell 5 (ไม่ใช่ลิงก์ colab.research.google.com)"
           autocomplete="off"
         >
         <button type="button" id="btn-test-conn" class="btn-reroll">Test Connection</button>
       </div>
+      <p class="backend-help-note">
+        &#128161; <strong>วิธีเชื่อมต่อ:</strong> เปิดไฟล์ <code>notebooks/Colab_Phase7_Live_Backend_Server.ipynb</code> ใน Google Colab &rarr; กด <strong>Run All</strong> &rarr; รอให้ <strong>Cell ที่ 5</strong> แสดงลิงก์ <code>https://xxxx.trycloudflare.com</code> แล้วคัดลอกมาวางด้านบน (หรือคลิกลิงก์เปิดเว็บอัตโนมัติใน Cell 5 ได้เลย)
+      </p>
 
       <div class="live-form">
         <label class="sr-only" for="live-symptom-input">Patient Symptom Narrative</label>

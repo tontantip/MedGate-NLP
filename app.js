@@ -118,40 +118,45 @@
   }
 
   /* ── Mode Switcher (Curated 25 Cases vs Live Free-Text) ── */
-  function initModeSwitcher() {
+  function switchToMode(mode) {
     const tabs = document.querySelectorAll(".mode-tab");
     const curatedPanel = document.getElementById("curated-selector-panel");
     const livePanel = document.getElementById("live-input-panel");
     const resultsWorkspace = document.getElementById("results-workspace");
 
+    stopActiveLoading();
+    currentMode = mode;
+
+    tabs.forEach((t) => {
+      const isSel = (t.getAttribute("data-mode") || "curated") === mode;
+      t.classList.toggle("is-active", isSel);
+      t.setAttribute("aria-selected", String(isSel));
+    });
+
+    if (mode === "live") {
+      curatedPanel.hidden = true;
+      livePanel.hidden = false;
+      document.getElementById("loading-panel").hidden = true;
+      resultsWorkspace.hidden = true;
+    } else {
+      livePanel.hidden = true;
+      curatedPanel.hidden = false;
+      document.getElementById("loading-panel").hidden = true;
+      if (visibleCases[activeVisibleIndex]) {
+        renderNarrative(visibleCases[activeVisibleIndex], activeVisibleIndex);
+        renderResults(visibleCases[activeVisibleIndex]);
+        resultsWorkspace.hidden = false;
+      }
+    }
+  }
+
+  function initModeSwitcher() {
+    const tabs = document.querySelectorAll(".mode-tab");
     tabs.forEach((tab) => {
       tab.addEventListener("click", () => {
         const mode = tab.getAttribute("data-mode") || "curated";
         if (mode === currentMode) return;
-        stopActiveLoading();
-        currentMode = mode;
-
-        tabs.forEach((t) => {
-          const isSel = t === tab;
-          t.classList.toggle("is-active", isSel);
-          t.setAttribute("aria-selected", String(isSel));
-        });
-
-        if (mode === "live") {
-          curatedPanel.hidden = true;
-          livePanel.hidden = false;
-          document.getElementById("loading-panel").hidden = true;
-          resultsWorkspace.hidden = true;
-        } else {
-          livePanel.hidden = true;
-          curatedPanel.hidden = false;
-          document.getElementById("loading-panel").hidden = true;
-          if (visibleCases[activeVisibleIndex]) {
-            renderNarrative(visibleCases[activeVisibleIndex], activeVisibleIndex);
-            renderResults(visibleCases[activeVisibleIndex]);
-            resultsWorkspace.hidden = false;
-          }
-        }
+        switchToMode(mode);
       });
     });
   }
@@ -297,11 +302,52 @@
     return String(url || "").trim().replace(/\/+$/, "");
   }
 
+  function isColabEditorUrl(url) {
+    const lower = String(url || "").toLowerCase();
+    return lower.includes("colab.research.google.com") || lower.includes("drive.google.com");
+  }
+
   function setConnBadge(state, text) {
     const badge = document.getElementById("conn-status-badge");
     if (!badge) return;
     badge.className = `conn-badge ${state}`;
     badge.textContent = text;
+  }
+
+  async function runConnectionTest(base, errMsg) {
+    if (!base) {
+      setConnBadge("is-err", "🔴 Missing Backend URL");
+      return false;
+    }
+    if (isColabEditorUrl(base)) {
+      setConnBadge("is-err", "🔴 ลิงก์ไม่ถูกต้อง (นี่คือลิงก์หน้าเว็บ Colab)");
+      if (errMsg) {
+        errMsg.textContent =
+          "⚠️ ลิงก์ที่วางเป็นลิงก์หน้าเว็บแก้ไข Colab (colab.research.google.com) ไม่ใช่ลิงก์ API Server ครับ — กรุณาเปิดไฟล์ Colab_Phase7_Live_Backend_Server.ipynb กด Run All แล้วคัดลอกลิงก์ https://xxxx.trycloudflare.com จากผลลัพธ์ของ Cell ที่ 5 มาวางแทนครับ";
+        errMsg.hidden = false;
+      }
+      return false;
+    }
+    try {
+      localStorage.setItem("medgate_backend_url", base);
+    } catch {}
+
+    if (errMsg) errMsg.hidden = true;
+    setConnBadge("is-idle", "⏳ Testing...");
+    try {
+      const resp = await fetch(`${base}/health`, { method: "GET" });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      setConnBadge("is-ok", `🟢 Connected: ${data.model || "Colab Ready"}`);
+      return true;
+    } catch (e) {
+      setConnBadge("is-err", `🔴 Failed (${e.message})`);
+      if (errMsg) {
+        errMsg.textContent = `ไม่สามารถเชื่อมต่อกับ ${base}/health ได้ (${e.message}) — ตรวจสอบว่า Cell ที่ 5 ใน Colab ยังรันค้างอยู่และใช้ลิงก์ .trycloudflare.com ล่าสุดครับ`;
+        errMsg.hidden = false;
+      }
+      return false;
+    }
   }
 
   function initLiveMode() {
@@ -313,11 +359,28 @@
 
     if (!urlInput || !testBtn || !runBtn || !textArea) return;
 
-    try {
-      const savedUrl = localStorage.getItem("medgate_backend_url");
-      if (savedUrl) urlInput.value = savedUrl;
-    } catch {
-      // Ignore storage error
+    // Support ?backend=https://xxxx.trycloudflare.com magic link from Colab Cell 5
+    const params = new URLSearchParams(window.location.search);
+    const queryBackend = normalizeBackendUrl(params.get("backend") || "");
+
+    if (queryBackend) {
+      urlInput.value = queryBackend;
+      try {
+        localStorage.setItem("medgate_backend_url", queryBackend);
+      } catch {}
+      setTimeout(() => {
+        switchToMode("live");
+        runConnectionTest(queryBackend, errMsg);
+      }, 50);
+    } else {
+      try {
+        const savedUrl = localStorage.getItem("medgate_backend_url");
+        if (savedUrl && !isColabEditorUrl(savedUrl)) {
+          urlInput.value = savedUrl;
+        }
+      } catch {
+        // Ignore storage error
+      }
     }
 
     document.querySelectorAll(".quick-chip").forEach((chip) => {
@@ -329,23 +392,7 @@
 
     testBtn.addEventListener("click", async () => {
       const base = normalizeBackendUrl(urlInput.value);
-      if (!base) {
-        setConnBadge("is-err", "🔴 Missing Backend URL");
-        return;
-      }
-      try {
-        localStorage.setItem("medgate_backend_url", base);
-      } catch {}
-
-      setConnBadge("is-idle", "⏳ Testing...");
-      try {
-        const resp = await fetch(`${base}/health`, { method: "GET" });
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const data = await resp.json();
-        setConnBadge("is-ok", `🟢 Connected: ${data.model || "Colab Ready"}`);
-      } catch (e) {
-        setConnBadge("is-err", `🔴 Failed (${e.message})`);
-      }
+      await runConnectionTest(base, errMsg);
     });
 
     runBtn.addEventListener("click", async () => {
@@ -354,8 +401,12 @@
       errMsg.hidden = true;
 
       if (!base) {
-        errMsg.textContent = "กรุณาวางลิงก์ Colab Backend URL (https://....trycloudflare.com) ก่อนกดวิเคราะห์ครับ";
+        errMsg.textContent = "กรุณาวางลิงก์ Tunnel URL (https://....trycloudflare.com) จาก Cell ที่ 5 ใน Colab ก่อนกดวิเคราะห์ครับ";
         errMsg.hidden = false;
+        return;
+      }
+      if (isColabEditorUrl(base)) {
+        await runConnectionTest(base, errMsg);
         return;
       }
       if (!text) {
