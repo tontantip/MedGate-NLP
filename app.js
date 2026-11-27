@@ -9,6 +9,8 @@
   let allCases = [];
   let visibleCases = [];
   let activeVisibleIndex = 0;
+  let currentMode = "curated"; // "curated" | "live"
+  let currentRenderedCase = null;
   const tierLangs = { 1: "en", 2: "en", 3: "en", 4: "en", 5: "en" };
 
   function escapeHtml(str) {
@@ -115,6 +117,45 @@
     });
   }
 
+  /* ── Mode Switcher (Curated 25 Cases vs Live Free-Text) ── */
+  function initModeSwitcher() {
+    const tabs = document.querySelectorAll(".mode-tab");
+    const curatedPanel = document.getElementById("curated-selector-panel");
+    const livePanel = document.getElementById("live-input-panel");
+    const resultsWorkspace = document.getElementById("results-workspace");
+
+    tabs.forEach((tab) => {
+      tab.addEventListener("click", () => {
+        const mode = tab.getAttribute("data-mode") || "curated";
+        if (mode === currentMode) return;
+        stopActiveLoading();
+        currentMode = mode;
+
+        tabs.forEach((t) => {
+          const isSel = t === tab;
+          t.classList.toggle("is-active", isSel);
+          t.setAttribute("aria-selected", String(isSel));
+        });
+
+        if (mode === "live") {
+          curatedPanel.hidden = true;
+          livePanel.hidden = false;
+          document.getElementById("loading-panel").hidden = true;
+          resultsWorkspace.hidden = true;
+        } else {
+          livePanel.hidden = true;
+          curatedPanel.hidden = false;
+          document.getElementById("loading-panel").hidden = true;
+          if (visibleCases[activeVisibleIndex]) {
+            renderNarrative(visibleCases[activeVisibleIndex], activeVisibleIndex);
+            renderResults(visibleCases[activeVisibleIndex]);
+            resultsWorkspace.hidden = false;
+          }
+        }
+      });
+    });
+  }
+
   /* ── Random 5 from 25 Pool ── */
   function sampleFiveFromPool() {
     const indices = allCases.map((_, i) => i);
@@ -125,7 +166,7 @@
     return indices.slice(0, 5).map((i) => allCases[i]);
   }
 
-  /* ── Render Case Selector (5 Visible Prompts Only — No Urgency/Category Spoilers) ── */
+  /* ── Render Case Selector (5 Visible Prompts Only) ── */
   function renderCaseSelector() {
     const grid = document.getElementById("case-selector-grid");
     if (!grid) return;
@@ -159,7 +200,7 @@
     });
   }
 
-  /* ── Render Patient Narrative (Clean Input Only — No Highlights/Spoilers) ── */
+  /* ── Render Patient Narrative ── */
   function renderNarrative(c, promptIdx) {
     document.getElementById("active-case-badge").textContent = `Prompt #${promptIdx + 1} • ID ${c.id}`;
     document.getElementById("narrative-heading").textContent = `Patient Symptom Prompt #${promptIdx + 1} (ID ${c.id})`;
@@ -167,7 +208,7 @@
     document.getElementById("narrative-text-th").textContent = c.narrative_th;
   }
 
-  /* ── 3-Second Staged Loading Animation ── */
+  /* ── 3-Second Staged Loading Animation (Curated Mode) ── */
   function stopActiveLoading() {
     if (loadingTimerId !== null) {
       clearTimeout(loadingTimerId);
@@ -251,6 +292,150 @@
     }, LOADING_DURATION_MS);
   }
 
+  /* ── Live Inference Mode Logic ── */
+  function normalizeBackendUrl(url) {
+    return String(url || "").trim().replace(/\/+$/, "");
+  }
+
+  function setConnBadge(state, text) {
+    const badge = document.getElementById("conn-status-badge");
+    if (!badge) return;
+    badge.className = `conn-badge ${state}`;
+    badge.textContent = text;
+  }
+
+  function initLiveMode() {
+    const urlInput = document.getElementById("backend-url-input");
+    const testBtn = document.getElementById("btn-test-conn");
+    const runBtn = document.getElementById("btn-run-live");
+    const textArea = document.getElementById("live-symptom-input");
+    const errMsg = document.getElementById("live-error-msg");
+
+    if (!urlInput || !testBtn || !runBtn || !textArea) return;
+
+    try {
+      const savedUrl = localStorage.getItem("medgate_backend_url");
+      if (savedUrl) urlInput.value = savedUrl;
+    } catch {
+      // Ignore storage error
+    }
+
+    document.querySelectorAll(".quick-chip").forEach((chip) => {
+      chip.addEventListener("click", () => {
+        textArea.value = chip.getAttribute("data-text") || "";
+        errMsg.hidden = true;
+      });
+    });
+
+    testBtn.addEventListener("click", async () => {
+      const base = normalizeBackendUrl(urlInput.value);
+      if (!base) {
+        setConnBadge("is-err", "🔴 Missing Backend URL");
+        return;
+      }
+      try {
+        localStorage.setItem("medgate_backend_url", base);
+      } catch {}
+
+      setConnBadge("is-idle", "⏳ Testing...");
+      try {
+        const resp = await fetch(`${base}/health`, { method: "GET" });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        setConnBadge("is-ok", `🟢 Connected: ${data.model || "Colab Ready"}`);
+      } catch (e) {
+        setConnBadge("is-err", `🔴 Failed (${e.message})`);
+      }
+    });
+
+    runBtn.addEventListener("click", async () => {
+      const base = normalizeBackendUrl(urlInput.value);
+      const text = textArea.value.trim();
+      errMsg.hidden = true;
+
+      if (!base) {
+        errMsg.textContent = "กรุณาวางลิงก์ Colab Backend URL (https://....trycloudflare.com) ก่อนกดวิเคราะห์ครับ";
+        errMsg.hidden = false;
+        return;
+      }
+      if (!text) {
+        errMsg.textContent = "กรุณาพิมพ์ข้อความอาการผู้ป่วย (ภาษาไทยหรือภาษาอังกฤษ) ก่อนกดวิเคราะห์ครับ";
+        errMsg.hidden = false;
+        return;
+      }
+
+      try {
+        localStorage.setItem("medgate_backend_url", base);
+      } catch {}
+
+      stopActiveLoading();
+      runBtn.disabled = true;
+
+      const loadingPanel = document.getElementById("loading-panel");
+      const resultsWorkspace = document.getElementById("results-workspace");
+      const stageText = document.getElementById("loading-stage-text");
+      const timerText = document.getElementById("loading-timer-text");
+      const progressFill = document.getElementById("loading-progress-fill");
+      const pill1 = document.getElementById("stage-pill-1");
+      const pill2 = document.getElementById("stage-pill-2");
+      const pill3 = document.getElementById("stage-pill-3");
+
+      resultsWorkspace.hidden = true;
+      loadingPanel.hidden = false;
+      stageText.textContent = "Running Live 5-Tier Pipeline on Colab T4 (Translate → Jev AI → Qwen2.5-3B → Claude 5.5)...";
+      pill1.className = "stage-pill is-active";
+      pill2.className = "stage-pill is-active";
+      pill3.className = "stage-pill is-active";
+
+      const tStart = performance.now();
+      function liveTick(now) {
+        const sec = (now - tStart) / 1000;
+        timerText.textContent = `${sec.toFixed(1)}s (Live)`;
+        const fakePct = Math.min(92, (sec / 6.0) * 100);
+        progressFill.style.width = `${fakePct.toFixed(1)}%`;
+        loadingRafId = requestAnimationFrame(liveTick);
+      }
+      loadingRafId = requestAnimationFrame(liveTick);
+
+      try {
+        const resp = await fetch(`${base}/api/triage`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text, theta_u: 0.98, theta_s: 0.80 }),
+        });
+        if (!resp.ok) {
+          const detail = await resp.text();
+          throw new Error(`HTTP ${resp.status}: ${detail.slice(0, 160)}`);
+        }
+        const payload = await resp.json();
+        stopActiveLoading();
+        progressFill.style.width = "100%";
+        loadingPanel.hidden = true;
+
+        setConnBadge("is-ok", "🟢 Connected (Live OK)");
+
+        const liveCase = {
+          id: "LIVE",
+          narrative_en: payload.narrative_en,
+          narrative_th: payload.narrative_th,
+          was_thai_input: payload.was_thai_input,
+          ground_truth: null,
+          tiers: payload.tiers,
+        };
+        renderResults(liveCase);
+        resultsWorkspace.hidden = false;
+      } catch (e) {
+        stopActiveLoading();
+        loadingPanel.hidden = true;
+        errMsg.textContent = `เกิดข้อผิดพลาดในการเชื่อมต่อ Backend: ${e.message}`;
+        errMsg.hidden = false;
+        setConnBadge("is-err", "🔴 Connection Error");
+      } finally {
+        runBtn.disabled = false;
+      }
+    });
+  }
+
   /* ── Render Probability / Confidence Bars ── */
   function renderProbabilitiesBlock(tier) {
     if (tier.urgency_probs) {
@@ -322,14 +507,12 @@
         const card = btn.closest(".tier-card");
         if (!card) return;
 
-        // Update button active states on this card only
         card.querySelectorAll(".tier-rat-btn").forEach((b) => {
           const isSel = b.getAttribute("data-lang") === lang;
           b.classList.toggle("is-active", isSel);
           b.setAttribute("aria-selected", String(isSel));
         });
 
-        // Update title & rationale text on this card only
         const titleEl = card.querySelector(".rationale-title");
         const textEl = card.querySelector(".rationale-text");
         if (titleEl) {
@@ -344,110 +527,145 @@
 
   /* ── Render Vertical 5-Tier Stack & Comparison Table ── */
   function renderResults(c) {
+    currentRenderedCase = c;
     const stack = document.getElementById("tiers-vertical-stack");
     const gt = c.ground_truth;
 
-    stack.innerHTML = c.tiers
-      .map((t) => {
-        const isHighlight = t.tier === 4 || t.tier === 5;
-        const gateReasonHtml = t.gate_reason
-          ? `<div class="gate-reason-bar">${escapeHtml(t.gate_reason)}</div>`
-          : "";
-        const lang = tierLangs[t.tier] || "en";
-        const rationaleText = lang === "th" ? t.rationale_th : t.rationale_en;
-        const rationaleLangLabel = lang.toUpperCase();
-
-        return `
-        <article class="tier-card ${isHighlight ? "is-highlighted" : ""}" data-tier-card="${t.tier}">
-          <div class="tier-card-header">
-            <div class="tier-title-group">
-              <span class="tier-number-tag">TIER ${t.tier}</span>
-              <h3 class="tier-name">${escapeHtml(t.name)}</h3>
-              <p class="tier-subtitle">${escapeHtml(t.subtitle)}</p>
+    const liveBannerHtml = !gt
+      ? `
+        <div class="narrative-card" style="margin-bottom: 4px;">
+          <div class="narrative-header">
+            <span class="mono-label">LIVE TRANSLATED INPUTS (${c.was_thai_input ? "THAI → CLINICAL ENGLISH" : "ENGLISH → THAI"})</span>
+          </div>
+          <div class="narrative-columns" data-view="both">
+            <div class="narrative-col">
+              <span class="lang-badge">Clinical English (Sent to Tiers 1–5)</span>
+              <p class="narrative-text">${escapeHtml(c.narrative_en)}</p>
             </div>
-            <div class="tier-badges-right">
-              ${renderRoutingBadge(t)}
+            <div class="narrative-col">
+              <span class="lang-badge">ภาษาไทย (Thai Display)</span>
+              <p class="narrative-text">${escapeHtml(c.narrative_th)}</p>
             </div>
           </div>
+        </div>`
+      : "";
 
-          ${gateReasonHtml}
+    stack.innerHTML =
+      liveBannerHtml +
+      c.tiers
+        .map((t) => {
+          const isHighlight = t.tier === 4 || t.tier === 5;
+          const gateReasonHtml = t.gate_reason
+            ? `<div class="gate-reason-bar">${escapeHtml(t.gate_reason)}</div>`
+            : "";
+          const lang = tierLangs[t.tier] || "en";
+          const rationaleText = lang === "th" ? t.rationale_th : t.rationale_en;
+          const rationaleLangLabel = lang.toUpperCase();
 
-          <div class="tier-body-grid">
-            <div class="prediction-box">
-              <div class="pred-row">
-                <span class="pred-label">Predicted Urgency</span>
-                <span class="urgency-pill urg-${escapeHtml(t.urgency)}">${escapeHtml(t.urgency)}</span>
+          return `
+          <article class="tier-card ${isHighlight ? "is-highlighted" : ""}" data-tier-card="${t.tier}">
+            <div class="tier-card-header">
+              <div class="tier-title-group">
+                <span class="tier-number-tag">TIER ${t.tier}</span>
+                <h3 class="tier-name">${escapeHtml(t.name)}</h3>
+                <p class="tier-subtitle">${escapeHtml(t.subtitle)}</p>
               </div>
-              <div class="pred-row">
-                <span class="pred-label">Predicted Specialty</span>
-                <span class="specialty-pill">${escapeHtml(t.specialty)}</span>
+              <div class="tier-badges-right">
+                ${renderRoutingBadge(t)}
               </div>
-              ${renderProbabilitiesBlock(t)}
             </div>
 
-            <div class="rationale-box">
-              <div class="rationale-header-row">
-                <span class="rationale-title">Model Reasoning (Clinical Rationale &bull; ${rationaleLangLabel})</span>
-                <div class="tier-rat-tabs" role="tablist" aria-label="Tier ${t.tier} Rationale Language">
-                  <button type="button" class="tier-rat-btn ${lang === "en" ? "is-active" : ""}" data-tier="${t.tier}" data-lang="en" role="tab" aria-selected="${lang === "en"}">EN</button>
-                  <button type="button" class="tier-rat-btn ${lang === "th" ? "is-active" : ""}" data-tier="${t.tier}" data-lang="th" role="tab" aria-selected="${lang === "th"}">TH</button>
+            ${gateReasonHtml}
+
+            <div class="tier-body-grid">
+              <div class="prediction-box">
+                <div class="pred-row">
+                  <span class="pred-label">Predicted Urgency</span>
+                  <span class="urgency-pill urg-${escapeHtml(t.urgency)}">${escapeHtml(t.urgency)}</span>
                 </div>
+                <div class="pred-row">
+                  <span class="pred-label">Predicted Specialty</span>
+                  <span class="specialty-pill">${escapeHtml(t.specialty)}</span>
+                </div>
+                ${renderProbabilitiesBlock(t)}
               </div>
-              <p class="rationale-text ${t.no_rationale_by_design ? "is-muted" : ""}">${escapeHtml(rationaleText)}</p>
-            </div>
-          </div>
 
-          <div class="metrics-strip">
-            <div class="metric-cell">
-              <span class="metric-k">Latency</span>
-              <span class="metric-v tabular-nums">${fmtMs(t.latency_ms)}</span>
+              <div class="rationale-box">
+                <div class="rationale-header-row">
+                  <span class="rationale-title">Model Reasoning (Clinical Rationale &bull; ${rationaleLangLabel})</span>
+                  <div class="tier-rat-tabs" role="tablist" aria-label="Tier ${t.tier} Rationale Language">
+                    <button type="button" class="tier-rat-btn ${lang === "en" ? "is-active" : ""}" data-tier="${t.tier}" data-lang="en" role="tab" aria-selected="${lang === "en"}">EN</button>
+                    <button type="button" class="tier-rat-btn ${lang === "th" ? "is-active" : ""}" data-tier="${t.tier}" data-lang="th" role="tab" aria-selected="${lang === "th"}">TH</button>
+                  </div>
+                </div>
+                <p class="rationale-text ${t.no_rationale_by_design ? "is-muted" : ""}">${escapeHtml(rationaleText)}</p>
+              </div>
             </div>
-            <div class="metric-cell">
-              <span class="metric-k">Total Tokens</span>
-              <span class="metric-v tabular-nums">${fmtTokens(t.total_tokens)}</span>
-              <span class="metric-note">${escapeHtml(t.token_note || "")}</span>
+
+            <div class="metrics-strip">
+              <div class="metric-cell">
+                <span class="metric-k">Latency</span>
+                <span class="metric-v tabular-nums">${fmtMs(t.latency_ms)}</span>
+              </div>
+              <div class="metric-cell">
+                <span class="metric-k">Total Tokens</span>
+                <span class="metric-v tabular-nums">${fmtTokens(t.total_tokens)}</span>
+                <span class="metric-note">${escapeHtml(t.token_note || "")}</span>
+              </div>
+              <div class="metric-cell">
+                <span class="metric-k">Total Cost (USD)</span>
+                <span class="metric-v tabular-nums">${fmtCost(t.cost_usd)}</span>
+                <span class="metric-note">${escapeHtml(t.cost_note)}</span>
+              </div>
             </div>
-            <div class="metric-cell">
-              <span class="metric-k">Total Cost (USD)</span>
-              <span class="metric-v tabular-nums">${fmtCost(t.cost_usd)}</span>
-              <span class="metric-note">${escapeHtml(t.cost_note)}</span>
-            </div>
-          </div>
-        </article>`;
-      })
-      .join("");
+          </article>`;
+        })
+        .join("");
 
     attachPerTierRationaleListeners(c);
 
-    // Render Ground Truth Card
+    // Render Ground Truth Card (or Live Mode Info Banner)
     const gtCard = document.getElementById("gt-summary-card");
-    gtCard.innerHTML = `
-      <div class="gt-left">
-        <span class="gt-label">PHYSICIAN GROUND TRUTH</span>
-        <span class="urgency-pill urg-${escapeHtml(gt.urgency)}">${escapeHtml(gt.urgency)}</span>
-        <span class="specialty-pill">${escapeHtml(gt.specialty)}</span>
-      </div>
-      <span class="meta-pill tabular-nums">Physician Annotation Conf: ${fmtPct(gt.confidence)}</span>
-      <p class="gt-reasoning"><strong>Clinical Reference:</strong> ${escapeHtml(gt.clinical_reasoning)}</p>
-    `;
+    if (gt) {
+      gtCard.innerHTML = `
+        <div class="gt-left">
+          <span class="gt-label">PHYSICIAN GROUND TRUTH</span>
+          <span class="urgency-pill urg-${escapeHtml(gt.urgency)}">${escapeHtml(gt.urgency)}</span>
+          <span class="specialty-pill">${escapeHtml(gt.specialty)}</span>
+        </div>
+        <span class="meta-pill tabular-nums">Physician Annotation Conf: ${fmtPct(gt.confidence)}</span>
+        <p class="gt-reasoning"><strong>Clinical Reference:</strong> ${escapeHtml(gt.clinical_reasoning)}</p>
+      `;
+    } else {
+      gtCard.innerHTML = `
+        <div class="gt-left">
+          <span class="gt-label">LIVE FREE-TEXT MODE (NO PHYSICIAN GROUND TRUTH)</span>
+        </div>
+        <span class="meta-pill">Comparing Tier 1–5 Consensus, Latency &amp; Cost</span>
+      `;
+    }
 
     // Render Comparison Table
     const tbody = document.getElementById("comparison-table-body");
     tbody.innerHTML = c.tiers
       .map((t) => {
-        const urgMatch = t.urgency === gt.urgency;
-        const specMatch = t.specialty === gt.specialty;
-        const isCriticalMiss = gt.urgency === "Emergency" && t.urgency !== "Emergency";
+        let urgBadge = "";
+        let specBadge = "";
+        if (gt) {
+          const urgMatch = t.urgency === gt.urgency;
+          const specMatch = t.specialty === gt.specialty;
+          const isCriticalMiss = gt.urgency === "Emergency" && t.urgency !== "Emergency";
 
-        const urgBadge = urgMatch
-          ? `<span class="status-badge is-match">&#9989; Match</span>`
-          : isCriticalMiss
-            ? `<span class="status-badge is-miss">&#128680; Critical Miss</span>`
+          urgBadge = urgMatch
+            ? `<span class="status-badge is-match">&#9989; Match</span>`
+            : isCriticalMiss
+              ? `<span class="status-badge is-miss">&#128680; Critical Miss</span>`
+              : `<span class="status-badge is-miss">&#10060; Miss</span>`;
+
+          specBadge = specMatch
+            ? `<span class="status-badge is-match">&#9989; Match</span>`
             : `<span class="status-badge is-miss">&#10060; Miss</span>`;
-
-        const specBadge = specMatch
-          ? `<span class="status-badge is-match">&#9989; Match</span>`
-          : `<span class="status-badge is-miss">&#10060; Miss</span>`;
+        }
 
         const routeBadge =
           t.is_auto_route === true
@@ -481,6 +699,8 @@
   function init() {
     initThemeToggle();
     initLangTabs();
+    initModeSwitcher();
+    initLiveMode();
 
     const data = window.MEDGATE_DEMO_25CASES;
     if (!data || !Array.isArray(data.cases) || data.cases.length === 0) {

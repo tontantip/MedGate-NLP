@@ -56,8 +56,65 @@
   </header>
 
   <main class="container main-layout" id="app-main">
-    <!-- FEATURE A: CASE SELECTOR (5 CURATED TEST CASES) -->
-    <section class="panel selector-panel" aria-label="Curated 5 Patient Symptom Cases">
+    <!-- MODE SWITCHER -->
+    <div class="mode-switcher-bar" role="tablist" aria-label="Demo Mode Switcher">
+      <button type="button" class="mode-tab is-active" data-mode="curated" role="tab" aria-selected="true">
+        &#128203; 25 Curated Cases (Offline Benchmark)
+      </button>
+      <button type="button" class="mode-tab" data-mode="live" role="tab" aria-selected="false">
+        &#10024; Live Free-Text Inference (Thai / English)
+      </button>
+    </div>
+
+    <!-- LIVE FREE-TEXT PANEL (HIDDEN BY DEFAULT) -->
+    <section class="panel live-panel" id="live-input-panel" aria-label="Live Free-Text Symptom Inference" hidden>
+      <div class="section-header">
+        <div>
+          <span class="mono-label">LIVE COLAB T4 INFERENCE &bull; THAI &amp; ENGLISH SUPPORT</span>
+          <h2 class="section-title">พิมพ์อาการผู้ป่วยสดเพื่อทดสอบทั้ง 5 Tiers แบบ Real-time</h2>
+        </div>
+        <span class="conn-badge is-idle" id="conn-status-badge">&#9898; Not Connected</span>
+      </div>
+
+      <div class="backend-bar">
+        <label class="backend-label" for="backend-url-input">Colab Backend URL:</label>
+        <input
+          type="url"
+          id="backend-url-input"
+          class="backend-input"
+          placeholder="https://xxxx-xxxx.trycloudflare.com"
+          autocomplete="off"
+        >
+        <button type="button" id="btn-test-conn" class="btn-reroll">Test Connection</button>
+      </div>
+
+      <div class="live-form">
+        <label class="sr-only" for="live-symptom-input">Patient Symptom Narrative</label>
+        <textarea
+          id="live-symptom-input"
+          class="live-textarea"
+          rows="4"
+          maxlength="2000"
+          placeholder="พิมพ์อาการผู้ป่วยเป็นภาษาไทยหรือภาษาอังกฤษ เช่น: ผู้ป่วยชาย อายุ 58 ปี เจ็บแน่นหน้าอกรุนแรงเหมือนมีช้างนั่งทับ ร้าวไปแขนซ้ายและกราม เหงื่อแตกมาก หายใจไม่ออก เป็นมา 1 ชั่วโมง..."
+        ></textarea>
+
+        <div class="live-actions-row">
+          <div class="quick-chips">
+            <span class="control-mini-label">ตัวอย่างพิมพ์เร็ว:</span>
+            <button type="button" class="quick-chip" data-text="ผู้ป่วยชาย อายุ 58 ปี เจ็บแน่นหน้าอกรุนแรงเหมือนมีอะไรกดทับ ร้าวไปแขนซ้ายและกราม เหงื่อแตกมาก หายใจไม่ออก เป็นมา 1 ชั่วโมง">ไทย: เจ็บหน้าอกวิกฤต</button>
+            <button type="button" class="quick-chip" data-text="ผู้ป่วยหญิง อายุ 35 ปี มีผื่นแดงเป็นขุยสีขาวเงินที่ข้อศอกและเข่าสองข้าง คันเล็กน้อย เป็นมา 6 เดือน ไม่มีไข้">ไทย: ผื่นสะเก็ดเงินทั่วไป</button>
+            <button type="button" class="quick-chip" data-text="45-year-old female with sudden severe right flank pain radiating to groin, nausea, and pink urine for 4 hours. Pain 9/10.">EN: Sudden Flank Pain</button>
+          </div>
+          <button type="button" id="btn-run-live" class="btn-analyze">
+            &#9889; Analyze Symptoms (Run Live 5-Tier)
+          </button>
+        </div>
+        <p class="live-error-msg" id="live-error-msg" hidden></p>
+      </div>
+    </section>
+
+    <!-- FEATURE A: CASE SELECTOR (25 CURATED TEST CASES) -->
+    <section class="panel selector-panel" id="curated-selector-panel" aria-label="Curated 5 Patient Symptom Cases">
       <div class="section-header">
         <div>
           <span class="mono-label">STEP 1 &bull; CURATED TEST BENCHMARK (5 OF 25 CASES)</span>
