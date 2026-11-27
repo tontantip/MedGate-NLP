@@ -77,18 +77,45 @@
       </div>
 
       <div class="backend-bar">
-        <label class="backend-label" for="backend-url-input">Tunnel URL (จาก Cell 5 ใน Colab):</label>
+        <button type="button" id="btn-auto-connect" class="btn-analyze">
+          &#128268; Auto-Connect Colab GPU
+        </button>
+        <a
+          href="https://colab.research.google.com/drive/1ZcVu2tBG967ukkRsKHXxJqliL0cReNer"
+          target="_blank"
+          rel="noopener noreferrer"
+          id="btn-open-colab"
+          class="btn-reroll"
+          style="text-decoration: none;"
+        >
+          &#128640; เปิดหน้า Colab (กด Run All ครั้งแรก)
+        </a>
         <input
           type="url"
           id="backend-url-input"
           class="backend-input"
-          placeholder="วางลิงก์ https://xxxx.trycloudflare.com จาก Cell 5 (ไม่ใช่ลิงก์ colab.research.google.com)"
+          placeholder="ระบบจะดึงลิงก์ https://xxxx.trycloudflare.com จาก Colab ให้อัตโนมัติเมื่อกด Auto-Connect"
           autocomplete="off"
         >
-        <button type="button" id="btn-test-conn" class="btn-reroll">Test Connection</button>
+        <button type="button" id="btn-test-conn" class="btn-reroll">Test URL</button>
       </div>
+
+      <!-- LIVE CONNECTION COUNTDOWN & PROGRESS BAR -->
+      <div class="conn-countdown-box" id="conn-countdown-box" hidden>
+        <div class="conn-countdown-top">
+          <div class="loading-title-wrap">
+            <span class="pulse-ring" aria-hidden="true"></span>
+            <span class="conn-stage-title" id="conn-stage-title">กำลังเชื่อมต่อและรอสัญญาณจาก Colab T4 GPU...</span>
+          </div>
+          <span class="conn-countdown-timer tabular-nums" id="conn-countdown-timer">นับถอยหลัง 90s (0%)</span>
+        </div>
+        <div class="progress-track">
+          <div class="progress-fill" id="conn-progress-fill"></div>
+        </div>
+      </div>
+
       <p class="backend-help-note">
-        &#128161; <strong>วิธีเชื่อมต่อ:</strong> เปิดไฟล์ <code>notebooks/Colab_Phase7_Live_Backend_Server.ipynb</code> ใน Google Colab &rarr; กด <strong>Run All</strong> &rarr; รอให้ <strong>Cell ที่ 5</strong> แสดงลิงก์ <code>https://xxxx.trycloudflare.com</code> แล้วคัดลอกมาวางด้านบน (หรือคลิกลิงก์เปิดเว็บอัตโนมัติใน Cell 5 ได้เลย)
+        &#128161; <strong>วิธีใช้งานแบบไม่ต้องก๊อปปี้ลิงก์:</strong> กดปุ่ม <strong>Auto-Connect Colab GPU</strong> ด้านบน (หากยังไม่ได้เปิด Colab ให้กดปุ่ม <em>เปิดหน้า Colab</em> แล้วกด <code>Runtime &rarr; Run all</code> เพียงครั้งเดียว หน้าเว็บนี้จะนับถอยหลังและดึงลิงก์เชื่อมต่อให้อัตโนมัติทันทีที่ Colab รันเสร็จ)
       </p>
 
       <div class="live-form">

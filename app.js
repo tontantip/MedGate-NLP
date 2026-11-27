@@ -338,6 +338,9 @@
       const resp = await fetch(`${base}/health`, { method: "GET" });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data = await resp.json();
+      stopConnCountdown();
+      const box = document.getElementById("conn-countdown-box");
+      if (box) box.hidden = true;
       setConnBadge("is-ok", `🟢 Connected: ${data.model || "Colab Ready"}`);
       return true;
     } catch (e) {
@@ -350,14 +353,151 @@
     }
   }
 
+  const NTFY_POLL_URL = "https://ntfy.sh/medgate_ai_tontantip_dads7203_live/json?poll=1&since=all";
+  let connIntervalId = null;
+
+  function stopConnCountdown() {
+    if (connIntervalId !== null) {
+      clearInterval(connIntervalId);
+      connIntervalId = null;
+    }
+  }
+
+  async function fetchLatestColabBroadcast() {
+    try {
+      const resp = await fetch(NTFY_POLL_URL, { cache: "no-store" });
+      if (!resp.ok) return null;
+      const text = await resp.text();
+      const lines = text.trim().split("\n").filter(Boolean);
+      let latest = null;
+      for (const line of lines) {
+        try {
+          const env = JSON.parse(line);
+          if (env.event === "message" && env.message) {
+            const payload = JSON.parse(env.message);
+            if (payload && typeof payload === "object") {
+              latest = payload;
+            }
+          }
+        } catch {}
+      }
+      return latest;
+    } catch {
+      return null;
+    }
+  }
+
+  function startAutoConnectCountdown(urlInput, errMsg) {
+    stopConnCountdown();
+    if (errMsg) errMsg.hidden = true;
+
+    const box = document.getElementById("conn-countdown-box");
+    const stageEl = document.getElementById("conn-stage-title");
+    const timerEl = document.getElementById("conn-countdown-timer");
+    const fillEl = document.getElementById("conn-progress-fill");
+    if (!box || !stageEl || !timerEl || !fillEl) return;
+
+    box.hidden = false;
+    setConnBadge("is-idle", "⏳ Auto-Connecting...");
+
+    const totalSec = 90;
+    let remainingSec = totalSec;
+    let remotePct = 0;
+    let remoteMsg = "กำลังค้นหาสัญญาณและดึงลิงก์ Cloudflare Tunnel จาก Colab T4...";
+    let isChecking = false;
+
+    function updateUi() {
+      const timePct = Math.round(((totalSec - remainingSec) / totalSec) * 90);
+      const displayPct = Math.min(99, Math.max(timePct, remotePct));
+      stageEl.textContent = remoteMsg;
+      timerEl.textContent = `นับถอยหลัง ${remainingSec}s (${displayPct}%)`;
+      fillEl.style.width = `${displayPct}%`;
+    }
+
+    async function pollOnce() {
+      if (isChecking) return;
+      isChecking = true;
+      try {
+        const broadcast = await fetchLatestColabBroadcast();
+        if (broadcast) {
+          if (broadcast.msg) remoteMsg = broadcast.msg;
+          if (typeof broadcast.pct === "number") remotePct = broadcast.pct;
+          if (broadcast.url && !isColabEditorUrl(broadcast.url)) {
+            urlInput.value = normalizeBackendUrl(broadcast.url);
+            try {
+              localStorage.setItem("medgate_backend_url", urlInput.value);
+            } catch {}
+          }
+          updateUi();
+        }
+
+        const candidate = normalizeBackendUrl(urlInput.value);
+        if (candidate && !isColabEditorUrl(candidate)) {
+          const ctrl = new AbortController();
+          const tId = setTimeout(() => ctrl.abort(), 3000);
+          try {
+            const hResp = await fetch(`${candidate}/health`, { method: "GET", signal: ctrl.signal });
+            clearTimeout(tId);
+            if (hResp.ok) {
+              const data = await hResp.json();
+              stopConnCountdown();
+              fillEl.style.width = "100%";
+              stageEl.textContent = `✅ เชื่อมต่อ Colab T4 สำเร็จ! (${data.model || "Ready"})`;
+              timerEl.textContent = "เชื่อมต่อสำเร็จ (100%)";
+              setConnBadge("is-ok", `🟢 Connected: ${data.model || "Colab Ready"}`);
+              setTimeout(() => {
+                box.hidden = true;
+              }, 1800);
+              return;
+            }
+          } catch {
+            clearTimeout(tId);
+          }
+        }
+      } finally {
+        isChecking = false;
+      }
+    }
+
+    updateUi();
+    pollOnce();
+
+    connIntervalId = setInterval(() => {
+      remainingSec = Math.max(0, remainingSec - 1);
+      updateUi();
+      if (remainingSec % 3 === 0) {
+        pollOnce();
+      }
+      if (remainingSec === 0) {
+        stopConnCountdown();
+        setConnBadge("is-err", "🔴 Timeout (กรุณากด Run All ใน Colab)");
+        stageEl.textContent = "หมดเวลารอ 90 วินาที — กรุณาตรวจสอบว่ากด Run All ใน Colab แล้วลองกด Auto-Connect อีกครั้งครับ";
+      }
+    }, 1000);
+  }
+
   function initLiveMode() {
     const urlInput = document.getElementById("backend-url-input");
     const testBtn = document.getElementById("btn-test-conn");
+    const autoConnBtn = document.getElementById("btn-auto-connect");
+    const openColabBtn = document.getElementById("btn-open-colab");
     const runBtn = document.getElementById("btn-run-live");
     const textArea = document.getElementById("live-symptom-input");
     const errMsg = document.getElementById("live-error-msg");
 
     if (!urlInput || !testBtn || !runBtn || !textArea) return;
+
+    if (autoConnBtn) {
+      autoConnBtn.addEventListener("click", () => {
+        startAutoConnectCountdown(urlInput, errMsg);
+      });
+    }
+
+    if (openColabBtn) {
+      openColabBtn.addEventListener("click", () => {
+        startAutoConnectCountdown(urlInput, errMsg);
+      });
+    }
 
     // Support ?backend=https://xxxx.trycloudflare.com magic link from Colab Cell 5
     const params = new URLSearchParams(window.location.search);

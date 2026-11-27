@@ -1321,6 +1321,41 @@ body {
   line-height: 1.5;
 }
 
+.conn-countdown-box {
+  margin: 0 0 12px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  background: var(--kaggle-cyan-soft);
+  border: 1px solid var(--kaggle-cyan);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.conn-countdown-box[hidden] {
+  display: none;
+}
+
+.conn-countdown-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.conn-stage-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.conn-countdown-timer {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--kaggle-cyan-text);
+}
+
 .backend-label {
   font-size: 12.5px;
   font-weight: 700;
